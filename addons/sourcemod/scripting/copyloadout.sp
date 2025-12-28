@@ -1,10 +1,21 @@
 #pragma semicolon 1
 #pragma newdecls required
 
+#define PLUGIN_VERSION	"1.0.0"
+
 #include <tf2utils>
 #include <tf_econ_data>
 
-static Handle g_hSDKCallGiveNamedItem;
+static Handle g_SDKCallGiveNamedItem;
+
+public Plugin myinfo = 
+{
+	name = "Copy Player Loadout",
+	author = "Mikusch",
+	description = "Allows copying a player's exact loadout.",
+	version = PLUGIN_VERSION,
+	url = "https://github.com/Mikusch/SM-TFCopyLoadout"
+};
 
 public void OnPluginStart()
 {
@@ -21,133 +32,140 @@ public void OnPluginStart()
 	PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain);
 	PrepSDKCall_AddParameter(SDKType_Bool, SDKPass_ByValue);
 	PrepSDKCall_SetReturnInfo(SDKType_CBaseEntity, SDKPass_Pointer);
-	g_hSDKCallGiveNamedItem = EndPrepSDKCall();
+	g_SDKCallGiveNamedItem = EndPrepSDKCall();
 
-	if (!g_hSDKCallGiveNamedItem)
+	if (!g_SDKCallGiveNamedItem)
 		SetFailState("Failed to set up SDKCall: CTFPlayer::GiveNamedItem");
 
 	delete gameconf;
 
-	RegAdminCmd("sm_disguise", ConCmd_Disguise, ADMFLAG_CHEATS, "");
+	RegAdminCmd("sm_copyloadout", ConCmd_Disguise, ADMFLAG_CHEATS, "");
 }
 
-void StealIdentity(int victim, int stealer)
+void CopyLoadout(int source, int target)
 {
-	TF2_SetPlayerClass(stealer, TF2_GetPlayerClass(victim), _, false);
-	TF2_RegeneratePlayer(stealer);
+	TF2_SetPlayerClass(target, TF2_GetPlayerClass(source), _, false);
+	TF2_RegeneratePlayer(target);
 
-	char szCustomModel[PLATFORM_MAX_PATH];
-	GetEntPropString(victim, Prop_Send, "m_iszCustomModel", szCustomModel, sizeof(szCustomModel));
+	char model[PLATFORM_MAX_PATH];
+	GetEntPropString(source, Prop_Send, "m_iszCustomModel", model, sizeof(model));
 
 	// Copy victim's model.
-	SetVariantString(szCustomModel);
-	AcceptEntityInput(stealer, "SetCustomModel");
+	SetVariantString(model);
+	AcceptEntityInput(target, "SetCustomModel");
 
 	// Nuke items.
-	int nMaxWeapons = GetEntPropArraySize(stealer, Prop_Data, "m_hMyWeapons");
-	for (int i = 0; i < nMaxWeapons; i++)
+	int maxWeapons = GetEntPropArraySize(target, Prop_Data, "m_hMyWeapons");
+	for (int i = 0; i < maxWeapons; i++)
 	{
-		int weapon = GetEntPropEnt(stealer, Prop_Data, "m_hMyWeapons", i);
+		int weapon = GetEntPropEnt(target, Prop_Data, "m_hMyWeapons", i);
 		if (weapon == -1)
 			continue;
 		
-		// Initializing builder weapons is a pain, so just let the game handle it by regenerating the player
+		// Builder weapons suck, you need to set the buildable objects on them, similar to the logic in CTFPlayer::ManageBuilderWeapons.
+		// To avoid more gamedata, keep the builder weapons the player generated. This unfortunately means that sappers will not be copied, but it is what it is.
 		if (TF2Util_GetWeaponID(weapon) == TF_WEAPON_BUILDER)
 			continue;
 
-		RemovePlayerItem(stealer, weapon);
+		RemovePlayerItem(target, weapon);
 		RemoveEntity(weapon);
 	}
 
 	// Nuke wearables.
-	for (int wbl = TF2Util_GetPlayerWearableCount(stealer) - 1; wbl >= 0; wbl--)
+	for (int wbl = TF2Util_GetPlayerWearableCount(target) - 1; wbl >= 0; wbl--)
 	{
-		int wearable = TF2Util_GetPlayerWearable(stealer, wbl);
+		int wearable = TF2Util_GetPlayerWearable(target, wbl);
 		if (wearable == -1)
 			continue;
 
-		TF2_RemoveWearable(stealer, wearable);
+		TF2_RemoveWearable(target, wearable);
 	}
 
 	// Copy victim's weapons.
-	for (int i = 0; i < GetEntPropArraySize(victim, Prop_Data, "m_hMyWeapons"); i++)
+	for (int i = 0; i < maxWeapons; i++)
 	{
-		int weapon = GetEntPropEnt(victim, Prop_Data, "m_hMyWeapons", i);
+		int weapon = GetEntPropEnt(source, Prop_Data, "m_hMyWeapons", i);
 		if (weapon == -1)
 			continue;
 
-		int iItemOffset = FindItemOffset(weapon);
-		if (iItemOffset == -1)
+		int offset = FindItemOffset(weapon);
+		if (offset == -1)
 			continue;
-			
-		Address pItem = GetEntityAddress(weapon) + view_as<Address>(iItemOffset);
-		if (!pItem)
-			continue;
-			
-		char szClassname[64];
-		if (!GetEntityClassname(weapon, szClassname, sizeof(szClassname)))
-			continue;
-			
-		TF2Econ_TranslateWeaponEntForClass(szClassname, sizeof(szClassname), TF2_GetPlayerClass(stealer));
 
-		int newItem = SDKCall(g_hSDKCallGiveNamedItem, stealer, szClassname, 0, pItem, true);
+		Address item = GetEntityAddress(weapon) + view_as<Address>(offset);
+		if (!item)
+			continue;
+
+		char clsname[64];
+		if (!GetEntityClassname(weapon, clsname, sizeof(clsname)))
+			continue;
+
+		TF2Econ_TranslateWeaponEntForClass(clsname, sizeof(clsname), TF2_GetPlayerClass(target));
+
+		int newItem = SDKCall(g_SDKCallGiveNamedItem, target, clsname, 0, item, true);
 		if (newItem == -1)
 			continue;
-			
+
 		SetEntProp(newItem, Prop_Send, "m_bValidatedAttachedEntity", true);
-		EquipPlayerWeapon(stealer, newItem);
-			
-		// Switch to our victim's active weapon.
-		if (weapon == GetEntPropEnt(victim, Prop_Send, "m_hActiveWeapon"))
+		EquipPlayerWeapon(target, newItem);
+
+		// Switch to victim's active weapon.
+		if (weapon == GetEntPropEnt(source, Prop_Send, "m_hActiveWeapon"))
 		{
-			TF2Util_SetPlayerActiveWeapon(stealer, newItem);
+			TF2Util_SetPlayerActiveWeapon(target, newItem);
 		}
 	}
-		
+
 	// Copy victim's wearables.
-	for (int wbl = TF2Util_GetPlayerWearableCount(victim) - 1; wbl >= 0; wbl--)
+	for (int wbl = TF2Util_GetPlayerWearableCount(source) - 1; wbl >= 0; wbl--)
 	{
-		int wearable = TF2Util_GetPlayerWearable(victim, wbl);
+		int wearable = TF2Util_GetPlayerWearable(source, wbl);
 		if (wearable == -1)
 			continue;
-			
-		int iItemOffset = FindItemOffset(wearable);
-		if (iItemOffset == -1)
-			continue;
-			
-		Address pItem = GetEntityAddress(wearable) + view_as<Address>(iItemOffset);
-		if (!pItem)
-			continue;
-			
-		char szClassname[64];
-		if (!GetEntityClassname(wearable, szClassname, sizeof(szClassname)))
+
+		int offset = FindItemOffset(wearable);
+		if (offset == -1)
 			continue;
 
-		TF2Econ_TranslateWeaponEntForClass(szClassname, sizeof(szClassname), TF2_GetPlayerClass(stealer));
-			
-		int newItem = SDKCall(g_hSDKCallGiveNamedItem, stealer, szClassname, 0, pItem, true);
+		Address item = GetEntityAddress(wearable) + view_as<Address>(offset);
+		if (!item)
+			continue;
+
+		char clsname[64];
+		if (!GetEntityClassname(wearable, clsname, sizeof(clsname)))
+			continue;
+
+		TF2Econ_TranslateWeaponEntForClass(clsname, sizeof(clsname), TF2_GetPlayerClass(target));
+
+		int newItem = SDKCall(g_SDKCallGiveNamedItem, target, clsname, 0, item, true);
 		if (newItem == -1)
 			continue;
-			
+
 		SetEntProp(newItem, Prop_Send, "m_bValidatedAttachedEntity", true);
-		TF2Util_EquipPlayerWearable(stealer, newItem);
+		TF2Util_EquipPlayerWearable(target, newItem);
 	}
 }
 
 int FindItemOffset(int entity)
 {
-	char szNetClass[32];
-	if (!GetEntityNetClass(entity, szNetClass, sizeof(szNetClass)))
-		return -1;
+	static int offset = -1;
+
+	if (offset != -1)
+		return offset;
 	
-	return FindSendPropInfo(szNetClass, "m_Item");
+	char clsname[32];
+	if (!GetEntityNetClass(entity, clsname, sizeof(clsname)))
+		return -1;
+
+	offset = FindSendPropInfo(clsname, "m_Item");
+	return offset;
 }
 
 static Action ConCmd_Disguise(int client, int args)
 {
 	if (args < 1)
 	{
-		ReplyToCommand(client, "[SM] Usage: sm_disguise <#userid|name> [#userid|name]");
+		ReplyToCommand(client, "[SM] Usage: sm_copyloadout <#userid|name> [#userid|name]");
 		return Plugin_Handled;
 	}
 
@@ -168,44 +186,44 @@ static Action ConCmd_Disguise(int client, int args)
 
 	if (GetCmdArg(2, arg, sizeof(arg)))
 	{
-		char recipientName[MAX_TARGET_LENGTH];
-		int recipientList[MAXPLAYERS], recipientCount;
-		bool recipientIsML;
+		char targetName[MAX_TARGET_LENGTH];
+		int targetList[MAXPLAYERS], targetCount;
+		bool targetIsML;
 
-		if ((recipientCount = ProcessTargetString(arg, client, recipientList, sizeof(recipientList), COMMAND_TARGET_NONE, recipientName, sizeof(recipientName), recipientIsML)) <= 0)
+		if ((targetCount = ProcessTargetString(arg, client, targetList, sizeof(targetList), COMMAND_FILTER_ALIVE, targetName, sizeof(targetName), targetIsML)) <= 0)
 		{
-			ReplyToTargetError(client, recipientCount);
+			ReplyToTargetError(client, targetCount);
 			return Plugin_Handled;
 		}
 
-		for (int i = 0; i < recipientCount; i++)
+		for (int i = 0; i < targetCount; i++)
 		{
-			if (recipientList[i] == source)
+			if (targetList[i] == source)
 				continue;
 
-			StealIdentity(source, recipientList[i]);
+			CopyLoadout(source, targetList[i]);
 		}
 
-		if (recipientIsML)
+		if (targetIsML)
 		{
-			ShowActivity2(client, "[SM] ", "Copied %s's loadout onto %t.", sourceName, recipientName);
+			ShowActivity2(client, "[SM] ", "Copied loadout of %s onto %t.", sourceName, targetName);
 		}
 		else
 		{
-			ShowActivity2(client, "[SM] ", "Copied %s's loadout onto %s.", sourceName, recipientName);
+			ShowActivity2(client, "[SM] ", "Copied loadout of %s onto %s.", sourceName, targetName);
 		}
 	}
 	else
 	{
-		StealIdentity(source, client);
+		CopyLoadout(source, client);
 
 		if (sourceIsML)
 		{
-			ShowActivity2(client, "[SM] ", "Copied %t's loadout.", sourceName);
+			ShowActivity2(client, "[SM] ", "Copied loadout of %t.", sourceName);
 		}
 		else
 		{
-			ShowActivity2(client, "[SM] ", "Copied %s's loadout.", sourceName);
+			ShowActivity2(client, "[SM] ", "Copied loadout of %s.", sourceName);
 		}
 	}
 
