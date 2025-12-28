@@ -11,7 +11,7 @@ static int g_PersistentSource[MAXPLAYERS + 1] = { -1, ... };
 
 public Plugin myinfo = 
 {
-	name = "Copy Player Loadout",
+	name = "[TF2] Copy Player Loadout",
 	author = "Mikusch",
 	description = "Allows copying a player's exact loadout.",
 	version = PLUGIN_VERSION,
@@ -167,8 +167,12 @@ void CopyLoadout(int source, int target)
 void ClearLoadout(int target)
 {
 	g_PersistentSource[target] = -1;
-	TF2_SetPlayerClass(target, view_as<TFClassType>(GetEntProp(target, Prop_Send, "m_iDesiredPlayerClass")), _, false);
-	TF2_RegeneratePlayer(target);
+
+	if (IsPlayerAlive(target))
+	{
+		TF2_SetPlayerClass(target, view_as<TFClassType>(GetEntProp(target, Prop_Send, "m_iDesiredPlayerClass")), _, false);
+		TF2_RegeneratePlayer(target);
+	}
 }
 
 int FindItemOffset(int entity)
@@ -286,7 +290,8 @@ static Action ConCmd_CopyLoadoutClear(int client, int args)
 {
 	if (args < 1)
 	{
-		ReplyToCommand(client, "[SM] Usage: sm_copyloadout_clear <#userid|name>");
+		ClearLoadout(client);
+		ShowActivity2(client, "[SM] ", "Cleared loadout persistence.");
 		return Plugin_Handled;
 	}
 
@@ -310,11 +315,11 @@ static Action ConCmd_CopyLoadoutClear(int client, int args)
 
 	if (targetIsML)
 	{
-		ShowActivity2(client, "[SM] ", "Cleared loadout of %t.", targetName);
+		ShowActivity2(client, "[SM] ", "Cleared loadout persistence for %t.", targetName);
 	}
 	else
 	{
-		ShowActivity2(client, "[SM] ", "Cleared loadout of %s.", targetName);
+		ShowActivity2(client, "[SM] ", "Cleared loadout persistence for %s.", targetName);
 	}
 
 	return Plugin_Handled;
