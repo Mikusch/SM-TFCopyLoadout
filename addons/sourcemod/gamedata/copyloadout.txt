@@ -1,0 +1,15 @@
+"Games"
+{
+	"tf"
+	{
+		"Offsets"
+		{
+			"CTFPlayer::GiveNamedItem"
+			{
+				"library"	"server"
+				"linux"		"494"
+				"windows"	"487"
+			}
+		}
+	}
+}
