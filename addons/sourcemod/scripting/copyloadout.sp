@@ -7,6 +7,7 @@
 #include <tf_econ_data>
 
 static Handle g_SDKCallGiveNamedItem;
+static int g_PersistentSource[MAXPLAYERS + 1] = { -1, ... };
 
 public Plugin myinfo = 
 {
@@ -39,13 +40,30 @@ public void OnPluginStart()
 
 	delete gameconf;
 
-	RegAdminCmd("sm_copyloadout", ConCmd_Disguise, ADMFLAG_CHEATS, "");
+	RegAdminCmd("sm_copyloadout", ConCmd_CopyLoadout, ADMFLAG_CHEATS, "");
+	RegAdminCmd("sm_copyloadout_clear", ConCmd_CopyLoadoutClear, ADMFLAG_CHEATS, "");
+
+	HookEvent("post_inventory_application", OnGameEvent_post_inventory_application);
+}
+
+public void OnClientDisconnect(int client)
+{
+	g_PersistentSource[client] = -1;
+
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if (g_PersistentSource[i] == client)
+			g_PersistentSource[i] = -1;
+	}
 }
 
 void CopyLoadout(int source, int target)
 {
 	TF2_SetPlayerClass(target, TF2_GetPlayerClass(source), _, false);
+
+	UnhookEvent("post_inventory_application", OnGameEvent_post_inventory_application);
 	TF2_RegeneratePlayer(target);
+	HookEvent("post_inventory_application", OnGameEvent_post_inventory_application);
 
 	char model[PLATFORM_MAX_PATH];
 	GetEntPropString(source, Prop_Send, "m_iszCustomModel", model, sizeof(model));
@@ -146,6 +164,13 @@ void CopyLoadout(int source, int target)
 	}
 }
 
+void ClearLoadout(int target)
+{
+	g_PersistentSource[target] = -1;
+	TF2_SetPlayerClass(target, view_as<TFClassType>(GetEntProp(target, Prop_Send, "m_iDesiredPlayerClass")), _, false);
+	TF2_RegeneratePlayer(target);
+}
+
 int FindItemOffset(int entity)
 {
 	static int offset = -1;
@@ -161,11 +186,27 @@ int FindItemOffset(int entity)
 	return offset;
 }
 
-static Action ConCmd_Disguise(int client, int args)
+static void OnGameEvent_post_inventory_application(Event event, const char[] name, bool dontBroadcast)
+{
+	int client = GetClientOfUserId(event.GetInt("userid"));
+	if (client == 0)
+		return;
+
+	int source = g_PersistentSource[client];
+	if (source == -1)
+		return;
+
+	if (!IsClientInGame(source) || TF2_GetClientTeam(source) <= TFTeam_Spectator)
+		return;
+
+	CopyLoadout(source, client);
+}
+
+static Action ConCmd_CopyLoadout(int client, int args)
 {
 	if (args < 1)
 	{
-		ReplyToCommand(client, "[SM] Usage: sm_copyloadout <#userid|name> [#userid|name]");
+		ReplyToCommand(client, "[SM] Usage: sm_copyloadout <#userid|name> [#userid|name] [persist]");
 		return Plugin_Handled;
 	}
 
@@ -184,13 +225,21 @@ static Action ConCmd_Disguise(int client, int args)
 
 	int source = sourceList[0];
 
+	if (TF2_GetClientTeam(source) <= TFTeam_Spectator)
+	{
+		ReplyToTargetError(source, COMMAND_TARGET_NONE);
+		return Plugin_Handled;
+	}
+
 	if (GetCmdArg(2, arg, sizeof(arg)))
 	{
+		bool persist = GetCmdArgInt(3) != 0;
+
 		char targetName[MAX_TARGET_LENGTH];
 		int targetList[MAXPLAYERS], targetCount;
 		bool targetIsML;
 
-		if ((targetCount = ProcessTargetString(arg, client, targetList, sizeof(targetList), COMMAND_FILTER_ALIVE, targetName, sizeof(targetName), targetIsML)) <= 0)
+		if ((targetCount = ProcessTargetString(arg, client, targetList, sizeof(targetList), persist ? 0 : COMMAND_FILTER_ALIVE, targetName, sizeof(targetName), targetIsML)) <= 0)
 		{
 			ReplyToTargetError(client, targetCount);
 			return Plugin_Handled;
@@ -202,6 +251,9 @@ static Action ConCmd_Disguise(int client, int args)
 				continue;
 
 			CopyLoadout(source, targetList[i]);
+
+			if (persist)
+				g_PersistentSource[targetList[i]] = source;
 		}
 
 		if (targetIsML)
@@ -225,6 +277,44 @@ static Action ConCmd_Disguise(int client, int args)
 		{
 			ShowActivity2(client, "[SM] ", "Copied loadout of %s.", sourceName);
 		}
+	}
+
+	return Plugin_Handled;
+}
+
+static Action ConCmd_CopyLoadoutClear(int client, int args)
+{
+	if (args < 1)
+	{
+		ReplyToCommand(client, "[SM] Usage: sm_copyloadout_clear <#userid|name>");
+		return Plugin_Handled;
+	}
+
+	char arg[MAX_TARGET_LENGTH];
+	GetCmdArg(1, arg, sizeof(arg));
+
+	char targetName[MAX_TARGET_LENGTH];
+	int targetList[MAXPLAYERS], targetCount;
+	bool targetIsML;
+
+	if ((targetCount = ProcessTargetString(arg, client, targetList, sizeof(targetList), 0, targetName, sizeof(targetName), targetIsML)) <= 0)
+	{
+		ReplyToTargetError(client, targetCount);
+		return Plugin_Handled;
+	}
+
+	for (int i = 0; i < targetCount; i++)
+	{
+		ClearLoadout(targetList[i]);
+	}
+
+	if (targetIsML)
+	{
+		ShowActivity2(client, "[SM] ", "Cleared loadout of %t.", targetName);
+	}
+	else
+	{
+		ShowActivity2(client, "[SM] ", "Cleared loadout of %s.", targetName);
 	}
 
 	return Plugin_Handled;
