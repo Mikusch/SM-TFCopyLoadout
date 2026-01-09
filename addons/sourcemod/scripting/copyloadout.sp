@@ -65,14 +65,11 @@ void CopyLoadout(int source, int target)
 	TF2_RegeneratePlayer(target);
 	HookEvent("post_inventory_application", OnGameEvent_post_inventory_application);
 
-	char model[PLATFORM_MAX_PATH];
-	GetEntPropString(source, Prop_Send, "m_iszCustomModel", model, sizeof(model));
+	// Copy victim's custom model.
+	char customModel[PLATFORM_MAX_PATH];
+	GetEntPropString(source, Prop_Send, "m_iszCustomModel", customModel, sizeof(customModel));
 
-	// Copy victim's model.
-	char szCustomModel[PLATFORM_MAX_PATH];
-	GetEntPropString(source, Prop_Send, "m_iszCustomModel", szCustomModel, sizeof(szCustomModel));
-
-	SetVariantString(szCustomModel);
+	SetVariantString(customModel);
 	AcceptEntityInput(target, "SetCustomModel");
 
 	SetEntProp(target, Prop_Send, "m_bUseClassAnimations", GetEntProp(source, Prop_Send, "m_bUseClassAnimations"));
@@ -80,11 +77,11 @@ void CopyLoadout(int source, int target)
 	SetEntProp(target, Prop_Send, "m_bCustomModelRotationSet", GetEntProp(source, Prop_Send, "m_bCustomModelRotationSet"));
 	SetEntProp(target, Prop_Send, "m_bCustomModelVisibleToSelf", GetEntProp(source, Prop_Send, "m_bCustomModelVisibleToSelf"));
 
-	float vecCustomModelOffset[3], angCustomModelRotation[3];
-	GetEntPropVector(source, Prop_Send, "m_vecCustomModelOffset", vecCustomModelOffset);
-	SetEntPropVector(target, Prop_Send, "m_vecCustomModelOffset", vecCustomModelOffset);
-	GetEntPropVector(source, Prop_Send, "m_angCustomModelRotation", angCustomModelRotation);
-	SetEntPropVector(target, Prop_Send, "m_angCustomModelRotation", angCustomModelRotation);
+	float customModelOffset[3], customModelRotation[3];
+	GetEntPropVector(source, Prop_Send, "m_vecCustomModelOffset", customModelOffset);
+	SetEntPropVector(target, Prop_Send, "m_vecCustomModelOffset", customModelOffset);
+	GetEntPropVector(source, Prop_Send, "m_angCustomModelRotation", customModelRotation);
+	SetEntPropVector(target, Prop_Send, "m_angCustomModelRotation", customModelRotation);
 
 
 	// Nuke items.
