@@ -69,9 +69,23 @@ void CopyLoadout(int source, int target)
 	GetEntPropString(source, Prop_Send, "m_iszCustomModel", model, sizeof(model));
 
 	// Copy victim's model.
-	SetVariantString(model);
+	char szCustomModel[PLATFORM_MAX_PATH];
+	GetEntPropString(source, Prop_Send, "m_iszCustomModel", szCustomModel, sizeof(szCustomModel));
+
+	SetVariantString(szCustomModel);
 	AcceptEntityInput(target, "SetCustomModel");
+
 	SetEntProp(target, Prop_Send, "m_bUseClassAnimations", GetEntProp(source, Prop_Send, "m_bUseClassAnimations"));
+	SetEntProp(target, Prop_Send, "m_bCustomModelRotates", GetEntProp(source, Prop_Send, "m_bCustomModelRotates"));
+	SetEntProp(target, Prop_Send, "m_bCustomModelRotationSet", GetEntProp(source, Prop_Send, "m_bCustomModelRotationSet"));
+	SetEntProp(target, Prop_Send, "m_bCustomModelVisibleToSelf", GetEntProp(source, Prop_Send, "m_bCustomModelVisibleToSelf"));
+
+	float vecCustomModelOffset[3], angCustomModelRotation[3];
+	GetEntPropVector(source, Prop_Send, "m_vecCustomModelOffset", vecCustomModelOffset);
+	SetEntPropVector(target, Prop_Send, "m_vecCustomModelOffset", vecCustomModelOffset);
+	GetEntPropVector(source, Prop_Send, "m_angCustomModelRotation", angCustomModelRotation);
+	SetEntPropVector(target, Prop_Send, "m_angCustomModelRotation", angCustomModelRotation);
+
 
 	// Nuke items.
 	int maxWeapons = GetEntPropArraySize(target, Prop_Data, "m_hMyWeapons");
