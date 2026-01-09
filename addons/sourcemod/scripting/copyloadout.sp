@@ -71,6 +71,7 @@ void CopyLoadout(int source, int target)
 	// Copy victim's model.
 	SetVariantString(model);
 	AcceptEntityInput(target, "SetCustomModel");
+	SetEntProp(target, Prop_Send, "m_bUseClassAnimations", GetEntProp(source, Prop_Send, "m_bUseClassAnimations"));
 
 	// Nuke items.
 	int maxWeapons = GetEntPropArraySize(target, Prop_Data, "m_hMyWeapons");
